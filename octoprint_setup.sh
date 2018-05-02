@@ -18,6 +18,8 @@ command_group_name=""
 touch $LOG
 logpath=$(realpath $LOG)
 
+installed_octoprint=0
+
 logwrite() {
   date=$(date '+%Y-%m-%d %H:%M:%S')
   info=${@/#/}
@@ -81,6 +83,8 @@ install_init() {
   run_apt_upgrade
 }
 
+# Octoprint installation total_commands
+# Reference: https://github.com/foosel/OctoPrint/wiki/Setup-on-a-Raspberry-Pi-running-Raspbian
 install_octoprint() {
   logwrite " "
   logwrite "----- Installing Octoprint -----"
@@ -138,6 +142,10 @@ install_octoprint() {
   add_command service octoprint stop
   add_command service octoprint start
   run_command_group
+
+  installed_octoprint=1
+  logwrite " "
+  logwrite "***** OctoPrint Installed *****"
 
 }
 
