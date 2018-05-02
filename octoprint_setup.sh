@@ -19,6 +19,7 @@ touch $LOG
 logpath=$(realpath $LOG)
 
 installed_octoprint=0
+installed_touchui=0
 
 logwrite() {
   date=$(date '+%Y-%m-%d %H:%M:%S')
@@ -55,8 +56,9 @@ init_main() {
   set_back_title "Octoprint Setup Utility"
 
   $DIALOG "${title_args[@]/#/}" --checklist --separate-output \
-    'Select features to install'  10 72 1 \
+    'Select features to install'  10 90 2 \
     'OctoPrint' 'The snappy web interface for your 3D printer.' ON \
+    'TouchUI' 'A touch friendly interface for Mobile and TFT touch modules' ON \
     2>results
 
   exitstatus=$?
@@ -68,9 +70,16 @@ init_main() {
       case $choice in
         OctoPrint) install_octoprint
         ;;
+        TouchUI) install_touchui
+        ;;
       esac
     done < results
     rm -f results
+
+    if [ $installed_octoprint = 1 ]
+    then
+        start_octoprint
+    fi
   fi
 }
 
@@ -83,7 +92,7 @@ install_init() {
   run_apt_upgrade
 }
 
-# Octoprint installation total_commands
+# Octoprint installation
 # Reference: https://github.com/foosel/OctoPrint/wiki/Setup-on-a-Raspberry-Pi-running-Raspbian
 install_octoprint() {
   logwrite " "
@@ -137,16 +146,37 @@ install_octoprint() {
   add_command cp /opt/octoprint/octoprint.default /etc/default/octoprint
   run_command_group
 
+  installed_octoprint=1
+  logwrite " "
+  logwrite "***** OctoPrint Installed *****"
+
+}
+
+# TouchUI installation
+# Reference: https://github.com/foosel/OctoPrint/wiki/Setup-on-a-Raspberry-Pi-running-Raspbian
+install_touchui() {
+  logwrite " "
+  logwrite "----- Installing TouchUI -----"
+
+  begin_command_group "Installing TouchUI Plugin"
+  add_command /opt/octoprint/venv/bin/pip install "https://github.com/BillyBlaze/OctoPrint-TouchUI/archive/master.zip"
+  run_command_group
+
+  
+
+  installed_touchui=1
+  logwrite " "
+  logwrite "***** TouchUI Installed *****"
+}
+
+start_octoprint() {
+  logwrite " "
+  logwrite "===== Starting Octoprint ====="
   begin_command_group "Starting Octoprint"
   add_command update-rc.d octoprint defaults
   add_command service octoprint stop
   add_command service octoprint start
   run_command_group
-
-  installed_octoprint=1
-  logwrite " "
-  logwrite "***** OctoPrint Installed *****"
-
 }
 
 begin_command_group() {
