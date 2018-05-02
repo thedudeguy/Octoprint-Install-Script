@@ -90,6 +90,7 @@ install_init() {
   run_apt_update
   set_window_title "Updating"
   run_apt_upgrade
+  run_apt_install git
 }
 
 # Octoprint installation
@@ -162,7 +163,7 @@ install_touchui() {
   add_command /opt/octoprint/venv/bin/pip install "https://github.com/BillyBlaze/OctoPrint-TouchUI/archive/master.zip"
   run_command_group
 
-  
+
 
   installed_touchui=1
   logwrite " "
