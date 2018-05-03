@@ -104,7 +104,7 @@ install_octoprint() {
   run_apt_install virtualenv python-pip python-dev python-setuptools python-virtualenv libyaml-dev build-essential
 
   begin_command_group "Setting up user"
-  add_command useradd --system --shell /bin/bash --create-home /home/octoprint
+  add_command useradd --system --shell /bin/bash --create-home --home-dir /home/octoprint octoprint
   add_command usermod -a -G tty octoprint
   add_command usermod -a -G dialout octoprint
   run_command_group
