@@ -101,6 +101,8 @@ install_octoprint() {
 
   set_window_title "Installing OctoPrint"
 
+  run_apt_install virtualenv python-pip python-dev python-setuptools python-virtualenv libyaml-dev build-essential
+
   begin_command_group "Setting up user"
   add_command useradd --system --shell /bin/bash --create-home /home/octoprint
   add_command usermod -a -G tty octoprint
@@ -117,8 +119,6 @@ install_octoprint() {
   add_command mkdir -p /opt/octoprint/src
   add_command mkdir -p /opt/octoprint/bin
   run_command_group
-
-  run_apt_install python-pip python-dev python-setuptools python-virtualenv git libyaml-dev build-essential
 
   begin_command_group "Setting up virtualenv"
   add_command cd /opt/octoprint
@@ -162,8 +162,6 @@ install_touchui() {
   begin_command_group "Installing TouchUI Plugin"
   add_command /opt/octoprint/venv/bin/pip install "https://github.com/BillyBlaze/OctoPrint-TouchUI/archive/master.zip"
   run_command_group
-
-
 
   installed_touchui=1
   logwrite " "
