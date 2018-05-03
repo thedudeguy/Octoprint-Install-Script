@@ -112,18 +112,21 @@ install_octoprint() {
   begin_command_group "Setting up folder structure"
   add_command mkdir -p /var/octoprint
   add_command chown root:octoprint /var/octoprint
+  add_command chmod 775 /var/octoprint
   add_command mkdir -p /etc/octoprint
   add_command chown root:octoprint /etc/octoprint
+  add_command chmod 775 /etc/octoprint
   add_command mkdir -p /opt/octoprint
   add_command chown root:octoprint /opt/octoprint
+  add_command chmod 775 /opt/octoprint
   add_command mkdir -p /opt/octoprint/src
   add_command mkdir -p /opt/octoprint/bin
   run_command_group
 
   begin_command_group "Setting up virtualenv"
   add_command cd /opt/octoprint
-  add_command virtualenv venv
-  add_command /opt/octoprint/venv/bin/pip install pip --upgrade
+  add_command sudo -u octoprint virtualenv venv
+  add_command sudo -u octoprint /opt/octoprint/venv/bin/pip install pip --upgrade
   run_command_group
 
   run_git_clone https://github.com/foosel/OctoPrint.git /opt/octoprint/src
@@ -188,15 +191,12 @@ add_command() {
   command_group_queue+=("$command")
 }
 
-add_command_in_dir() {
-  echo 'ya'
-}
-
 run_command_group() {
   wd="."
   total_commands=${#command_group_queue[@]}
   current_command_index=0
   completion=0
+  current_status=""
   logwrite " "
   logwrite "## Running Command Group: $command_group_name"
   {
@@ -204,9 +204,10 @@ run_command_group() {
     do
       logwrite $(printf ">> (%d/%d) %s" $(($current_command_index+1)) $total_commands "$command")
       completion=$(( (100*($current_command_index))/$total_commands ))
+      current_status=$(printf " %s (%d/%d)" "$command_group_name" $(($current_command_index+1)) $total_commands)
       echo XXX
       echo $completion
-      echo "$(printf " %s (%d/%d)" "$command_group_name" $(($current_command_index+1)) $total_commands)"
+      echo "$current_status"
       echo XXX
 
       ckey=$(echo $command | awk '{print $1}')
@@ -235,7 +236,7 @@ run_command_group() {
     logwrite "** Group $command_group_name finished"
     sleep 1
 
-  } |$DIALOG "${title_args[@]/#/}" --gauge " " 6 78 0
+  } |$DIALOG "${title_args[@]/#/}" --gauge " " 7 78 0
 }
 
 run_apt_command() {
