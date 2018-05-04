@@ -19,6 +19,7 @@ touch $LOG
 logpath=$(realpath $LOG)
 
 installed_octoprint=0
+installed_haproxy=0
 installed_touchui=0
 
 logwrite() {
@@ -56,8 +57,9 @@ init_main() {
   set_back_title "Octoprint Setup Utility"
 
   $DIALOG "${title_args[@]/#/}" --checklist --separate-output \
-    'Select features to install'  10 90 2 \
+    'Select features to install'  10 90 3 \
     'OctoPrint' 'The snappy web interface for your 3D printer.' ON \
+    'HAProxy'  'Allows both Octoprint and Webcam Stream accessibility on port 80' ON \
     'TouchUI' 'A touch friendly interface for Mobile and TFT touch modules' ON \
     2>results
 
@@ -70,6 +72,8 @@ init_main() {
       case $choice in
         OctoPrint) install_octoprint
         ;;
+        HAProxy) install_haproxy
+        ;;
         TouchUI) install_touchui
         ;;
       esac
@@ -79,6 +83,10 @@ init_main() {
     if [ $installed_octoprint = 1 ]
     then
         start_octoprint
+    fi
+    if [ $installed_haproxy = 1 ]
+    then
+        start_haproxy
     fi
   fi
 }
@@ -148,6 +156,7 @@ install_octoprint() {
   add_command cp /opt/octoprint/src/scripts/octoprint.init /etc/init.d/octoprint
   add_command chmod +x /etc/init.d/octoprint
   add_command cp /opt/octoprint/octoprint.default /etc/default/octoprint
+  add_command update-rc.d octoprint defaults
   run_command_group
 
   installed_octoprint=1
@@ -161,6 +170,7 @@ install_octoprint() {
 install_touchui() {
   logwrite " "
   logwrite "----- Installing TouchUI -----"
+  set_window_title "Installing TouchUI"
 
   begin_command_group "Installing TouchUI Plugin"
   add_command /opt/octoprint/venv/bin/pip install "https://github.com/BillyBlaze/OctoPrint-TouchUI/archive/master.zip"
@@ -171,13 +181,44 @@ install_touchui() {
   logwrite "***** TouchUI Installed *****"
 }
 
+# HAProxy Installation#
+# Reference: https://github.com/foosel/OctoPrint/wiki/Setup-on-a-Raspberry-Pi-running-Raspbian
+install_haproxy() {
+  logwrite " "
+  logwrite "----- Installing HAProxy -----"
+
+  set_window_title "Installing HAProxy"
+
+  run_apt_install haproxy
+
+  config_url="https://raw.githubusercontent.com/thedudeguy/Octoprint-Install-Script/master/assets/haproxy.cfg"
+  config_path="/etc/haproxy/haproxy.cfg"
+  run_wget "$config_url" "$config_path"
+
+  installed_haproxy=1
+  logwrite " "
+  logwrite "***** HAProxy Installed *****"
+}
+
 start_octoprint() {
   logwrite " "
   logwrite "===== Starting Octoprint ====="
+  set_window_title "Starting Octoprint"
+
   begin_command_group "Starting Octoprint"
-  add_command update-rc.d octoprint defaults
   add_command service octoprint stop
   add_command service octoprint start
+  run_command_group
+}
+
+start_haproxy() {
+  logwrite " "
+  logwrite "===== Starting HAProxy ====="
+  set_window_title "Starting HAProxy"
+
+  begin_command_group "Starting HAProxy"
+  add_command service haproxy stop
+  add_command service haproxy start
   run_command_group
 }
 
