@@ -86,6 +86,8 @@ init_main() {
         ;;
         Samba) install_samba
         ;;
+        Bonjour) install_bonjour
+        ;;
       esac
     done < results
     rm -f results
