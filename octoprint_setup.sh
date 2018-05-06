@@ -190,15 +190,87 @@ install_haproxy() {
 }
 
 # TouchUI installation
-# Reference: https://github.com/foosel/OctoPrint/wiki/Setup-on-a-Raspberry-Pi-running-Raspbian
+# References:
+#    https://github.com/foosel/OctoPrint/wiki/Setup-on-a-Raspberry-Pi-running-Raspbian
+#    https://scribles.net/setting-up-raspberry-pi-web-kiosk/
 install_touchui() {
   logwrite " "
   logwrite "----- Installing TouchUI -----"
   set_window_title "Installing TouchUI"
 
+  run_apt_install xinit chromium-browser
+
+  touch /home/pi/.hushlogin
+  chown pi:pi /home/pi/.hushlogin
+
+  # setup xinitc
+  xinit_file="/home/pi/.xinitrc"
+  touch $xinit_file
+  chown pi:pi $xinit_file
+
+  echo "#!/bin/sh" > $xinit_file
+
+  echo 'check_octoprint() {'  >> $xinit_file
+  echo '  pgrep -n octoprint > /dev/null'  >> $xinit_file
+  echo '  return $?'  >> $xinit_file
+  echo '}'  >> $xinit_file
+  echo 'stop_bannerd() {'  >> $xinit_file
+  echo "bpid=\$(sudo ps aux | grep bannerd | awk '{print \$2}' | head -n1)"  >> $xinit_file
+  echo 'if [ ! -z "$bpid" ]'  >> $xinit_file
+  echo 'then'  >> $xinit_file
+  echo 'sudo kill -9 "$bpid"'  >> $xinit_file
+  echo 'fi'  >> $xinit_file
+  echo '}'  >> $xinit_file
+  echo ''  >> $xinit_file
+  echo 'until check_octoprint'  >> $xinit_file
+  echo 'do'  >> $xinit_file
+  echo '  sleep 5'  >> $xinit_file
+  echo 'done'  >> $xinit_file
+  echo ''  >> $xinit_file
+  echo 'sleep 5s'  >> $xinit_file
+  echo 'stop_bannerd' >> $xinit_file
+  echo "" >> $xinit_file
+  echo "# disable blank screen" >> $xinit_file
+  echo "xset s off" >> $xinit_file
+  echo "xset -dpms" >> $xinit_file
+  echo "xset s noblank" >> $xinit_file
+  echo "" >> $xinit_file
+  echo "# launch browser" >> $xinit_file
+  echo 'exec chromium-browser \'  >> $xinit_file
+  echo ' --window-size=800,480 \'  >> $xinit_file
+  echo ' --enabled \' >> $xinit_file
+  echo ' --touch-events \' >> $xinit_file
+  echo ' --disable-bundled-ppapi-flash \' >> $xinit_file
+  echo ' --incognito \' >> $xinit_file
+  echo ' --kiosk \' >> $xinit_file
+  echo ' --window-position=0,0 \' >> $xinit_file
+  echo ' --start-fullscreen \' >> $xinit_file
+  echo ' --start-maximized \' >> $xinit_file
+  echo ' http://127.0.0.1:5000' >> $xinit_file
+
+  #maybe useful switches
+  # --edge-touch-filtering
+  # --touch-devices
+  # --touch-calibration
+  # --enable-hardware-overlays single-fullscreen
+
+  # setup bashrc
+  bashrc_file="/home/pi/.bashrc"
+  sed -i '/## TouchUI Settings ##/,/## End TouchUI Settings ##/d' $bashrc_file
+  echo '## TouchUI Settings ##' >> $bashrc_file
+  echo 'if [ -z "${SSH_TTY}" ]' >> $bashrc_file
+  echo 'then' >> $bashrc_file
+  echo 'startx -- -nocursor > /dev/null 2>&1' >> $bashrc_file
+  echo 'fi' >> $bashrc_file
+  echo '## End TouchUI Settings ##' >> $bashrc_file
+
   begin_command_group "Installing TouchUI Plugin"
   add_command /opt/octoprint/venv/bin/pip install "https://github.com/BillyBlaze/OctoPrint-TouchUI/archive/master.zip"
   run_command_group
+
+  systemctl set-default multi-user.target
+  sed /etc/systemd/system/autologin@.service -i -e 's#^ExecStart=.*#ExecStart=-/sbin/agetty --skip-login --noclear --noissue --login-options "-f pi" %I $TERM#'
+  ln -fs /etc/systemd/system/autologin@.service /etc/systemd/system/getty.target.wants/getty@tty1.service
 
   installed_touchui=1
   logwrite " "
@@ -294,7 +366,8 @@ install_bootsplash() {
   echo "After=local-fs.target"                                                          >> $bannerd_service_file
   echo ""                                                                               >> $bannerd_service_file
   echo "[Service]"                                                                      >> $bannerd_service_file
-  echo "ExecStart=/bin/sh -c '/opt/bannerd/bin/bannerd -D /opt/bannerd/frames/landscape/*.bmp'"  >> $bannerd_service_file
+  echo 'Type=forking' >> $bannerd_service_file
+  echo "ExecStart=/bin/sh -c '/opt/bannerd/bin/bannerd /opt/bannerd/frames/landscape/*.bmp'"  >> $bannerd_service_file
   echo "StandardInput=tty"                                                              >> $bannerd_service_file
   echo "StandardOutput=tty"                                                             >> $bannerd_service_file
   echo ""                                                                               >> $bannerd_service_file
@@ -305,7 +378,6 @@ install_bootsplash() {
   add_command systemctl mask plymouth-start.service
   add_command systemctl disable splashscreen
   add_command systemctl enable splashscreen
-  add_command systemctl disable getty@tty1
   run_command_group
 
   installed_bootsplash=1
