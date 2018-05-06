@@ -249,7 +249,7 @@ install_gl() {
   logwrite "----- Enabling GL -----"
   set_window_title "Enabling GL"
 
-  run_apt_install libgl1-mesa-dri mesa-utils
+  run_apt_install xcompmgr libgl1-mesa-dri mesa-utils
 
   config_file="/boot/config.txt"
   bak_config_file="/boot/config.txt.bak"
@@ -290,7 +290,7 @@ install_touchui() {
 
   xinit_file="/home/pi/.xinitrc"
 
-  run_apt_install xinit xinput chromium-browser
+  run_apt_install xinit xinput xinput-calibrator chromium-browser
 
   begin_command_group "Configuring TouchUI"
   add_command mkdir -p /opt/touchui-autostart
@@ -353,13 +353,24 @@ install_touchui() {
   echo ' --user-agent="TouchUI" \' >> $xinit_file
   echo ' --incognito \' >> $xinit_file
   echo ' --bwsi \' >> $xinit_file
+  echo ' --enable-smooth-scrolling \' >> $xinit_file
+  echo ' --disable-pinch \' >> $xinit_file
+  echo ' --root-layer-scrolls \' >> $xinit_file
+  echo ' --enable-scroll-prediction \' >> $xinit_file
   echo ' --allow-insecure-localhost \' >> $xinit_file
+  echo ' --overscroll-history-navigation \' >> $xinit_file
+  echo ' --enable-threaded-compositing \' >> $xinit_file
+  echo ' --enable-touch-calibration-setting \' >> $xinit_file
+
 
   if [ $gl_enabled = 1 ]
   then
-    echo ' --enable-hardware-overlays="single-fullscreen" \' >> $xinit_file
+    echo ' --enable-hardware-overlays \' >> $xinit_file
     echo ' --enable-accelerated-2d-canvas \' >> $xinit_file
     echo ' --enable-gpu-rasterization \' >> $xinit_file
+    echo ' --enable-direct-composition-layers \' >> $xinit_file
+
+
   fi
 
   echo ' /opt/touchui-autostart/load-screen/startup.html' >> $xinit_file
@@ -379,6 +390,8 @@ install_touchui() {
   echo 'startx -- -nocursor > /dev/null 2>&1' >> $bashrc_file
   echo 'fi' >> $bashrc_file
   echo '## End TouchUI Settings ##' >> $bashrc_file
+
+  #xinput_calibrator --misclick 0 --no-timeout --output-type xorg.conf.d  | sed -n '/Section/,/EndSection/p' > /usr/share/X11/xorg.conf.d/99-calibration.conf
 
   installed_touchui=1
   logwrite " "
@@ -481,7 +494,7 @@ install_bootsplash() {
   echo ""                                                                               >> $bannerd_service_file
   echo "[Service]"                                                                      >> $bannerd_service_file
   echo 'Type=forking' >> $bannerd_service_file
-  echo "ExecStart=/bin/sh -c '/opt/bannerd/bin/bannerd /opt/bannerd/frames/$mode/*.bmp'"  >> $bannerd_service_file
+  echo "ExecStart=/bin/sh -c '/opt/bannerd/bin/bannerd -D /opt/bannerd/frames/$mode/*.bmp'"  >> $bannerd_service_file
   echo "StandardInput=tty"                                                              >> $bannerd_service_file
   echo "StandardOutput=tty"                                                             >> $bannerd_service_file
   echo ""                                                                               >> $bannerd_service_file
