@@ -20,10 +20,12 @@ logpath=$(realpath $LOG)
 
 installed_octoprint=0
 installed_haproxy=0
+installed_portrait_mode=0
 installed_touchui=0
 installed_bootsplash=0
 installed_samba=0
 installed_bonjour=0
+gl_enabled=0
 
 logwrite() {
   date=$(date '+%Y-%m-%d %H:%M:%S')
@@ -60,9 +62,11 @@ init_main() {
   set_back_title "Octoprint Setup Utility"
 
   $DIALOG "${title_args[@]/#/}" --checklist --separate-output \
-    'Select features to install'  10 90 6 \
+    'Select features to install'  14 94 8 \
     'OctoPrint' 'The snappy web interface for your 3D printer.' ON \
-    'HAProxy'  'Allows both Octoprint and Webcam Stream accessibility on port 80' ON \
+    'HAProxy'  'Allows both Octoprint and Webcam Stream accessibility on port 80 ' ON \
+    'Enable_GL' 'Enable Hardware Acceleration' ON \
+    'Portrait-Mode' 'Rotate the display 90 degrees' ON \
     'TouchUI' 'A touch friendly interface for Mobile and TFT touch modules' ON \
     'BootSplash' 'A cooler animated bootsplash' ON \
     'Samba' 'Allows access to octoprint by hostname on windows' ON \
@@ -79,6 +83,10 @@ init_main() {
         OctoPrint) install_octoprint
         ;;
         HAProxy) install_haproxy
+        ;;
+        Enable_GL) install_gl
+        ;;
+        Portrait-Mode) install_portrait_mode
         ;;
         TouchUI) install_touchui
         ;;
@@ -101,6 +109,8 @@ init_main() {
     then
       start_haproxy
     fi
+
+    do_reboot
   fi
 }
 
@@ -197,64 +207,162 @@ install_haproxy() {
   logwrite "***** HAProxy Installed *****"
 }
 
+# Portrait-Mode Installation
+install_portrait_mode() {
+  logwrite " "
+  logwrite "----- Installing Portrait-Mode -----"
+  set_window_title "Installing Portrait-Mode"
+
+  config_file="/boot/config.txt"
+  bak_config_file="/boot/config.txt.bak"
+
+  if [ ! -f "$bak_config_file" ]
+  then
+    cp "$config_file" "$bak_config_file"
+  fi
+
+  # remove Portrait block
+  sed -i '/## Portrait Settings ##/,/## End Portrait Settings ##/d' $config_file
+  # comment out setting we'll be changing - if they exist in config currently
+  sed -i '/^#/! {/framebuffer_width/ s/^/#/}' $config_file
+  sed -i '/^#/! {/framebuffer_height/ s/^/#/}' $config_file
+  sed -i '/^#/! {/display_lcd_rotate/ s/^/#/}' $config_file
+  sed -i '/^#/! {/lcd_rotate/ s/^/#/}' $config_file
+  # add setting overrides
+  echo "## Portrait Settings ##"                  >> $config_file
+  echo "framebuffer_width=480"                    >> $config_file
+  echo "framebuffer_height=800"                   >> $config_file
+  echo "display_lcd_rotate=1"                     >> $config_file
+  echo "## End Portrait Settings ##"              >> $config_file
+
+  sleep 1 |$DIALOG "${title_args[@]/#/}" --gauge "Installing Portrait-Mode" 6 78 100
+
+  installed_portrait_mode=1
+  logwrite " "
+  logwrite "***** Portrait-Mode Installed *****"
+}
+
+# TSLib Installation
+# Reference: https://github.com/raysan5/raylib/wiki/Install-and-configure-Touchscreen-Drivers-(RPi)
+install_gl() {
+  logwrite " "
+  logwrite "----- Enabling GL -----"
+  set_window_title "Enabling GL"
+
+  run_apt_install libgl1-mesa-dri mesa-utils
+
+  config_file="/boot/config.txt"
+  bak_config_file="/boot/config.txt.bak"
+
+  if [ ! -f "$bak_config_file" ]
+  then
+    cp "$config_file" "$bak_config_file"
+  fi
+
+  # remove GL block
+  sed -i '/## GL Settings ##/,/## End GL Settings ##/d' $config_file
+  # comment out setting we'll be changing - if they exist in config currently
+  sed -i '/^#/! {/dtoverlay=vc4-kms-v3d/ s/^/#/}' $config_file
+  sed -i '/^#/! {/dtoverlay=vc4-fkms-v3d/ s/^/#/}' $config_file
+  sed -i '/^#/! {/gpu_mem/ s/^/#/}' $config_file
+  # add setting overrides
+  echo "## GL Settings ##"             >> $config_file
+  echo "dtoverlay=vc4-fkms-v3d"        >> $config_file
+  echo "gpu_mem=256"                   >> $config_file
+  echo "## End GL Settings ##"         >> $config_file
+
+  sleep 1 |$DIALOG "${title_args[@]/#/}" --gauge "GL Enabled" 6 78 100
+
+  gl_enabled=1
+  logwrite " "
+  logwrite "***** GL Enabled *****"
+}
+
 # TouchUI installation
 # References:
 #    https://github.com/foosel/OctoPrint/wiki/Setup-on-a-Raspberry-Pi-running-Raspbian
 #    https://scribles.net/setting-up-raspberry-pi-web-kiosk/
+#    https://github.com/BillyBlaze/OctoPrint-TouchUI/wiki/Setup:-Boot-to-Browser-(OctoPi-or-Jessie-Light)
 install_touchui() {
   logwrite " "
   logwrite "----- Installing TouchUI -----"
   set_window_title "Installing TouchUI"
 
-  run_apt_install xinit chromium-browser
-
-  touch /home/pi/.hushlogin
-  chown pi:pi /home/pi/.hushlogin
-
-  # setup xinitc
   xinit_file="/home/pi/.xinitrc"
-  touch $xinit_file
-  chown pi:pi $xinit_file
+
+  run_apt_install xinit xinput chromium-browser
+
+  begin_command_group "Configuring TouchUI"
+  add_command mkdir -p /opt/touchui-autostart
+  add_command sed -i 's/allowed_users=console/allowed_users=anybody/' /etc/X11/Xwrapper.config
+  add_command touch $xinit_file
+  add_command chown pi:pi $xinit_file
+  add_command systemctl set-default multi-user.target
+  add_command ln -fs /etc/systemd/system/autologin@.service /etc/systemd/system/getty.target.wants/getty@tty1.service
+  run_command_group
+
+  sed /etc/systemd/system/autologin@.service -i -e 's#^ExecStart=.*#ExecStart=-/sbin/agetty --skip-login --noclear --noissue --login-options "-f pi" %I \$TERM#'
+
+  begin_command_group "Installing TouchUI Plugin"
+  add_command /opt/octoprint/venv/bin/pip install "https://github.com/BillyBlaze/OctoPrint-TouchUI/archive/master.zip"
+  run_command_group
+
+  run_git_clone "https://github.com/BillyBlaze/OctoPrint-TouchUI-autostart.git" /opt/touchui-autostart
+
+  window_size="800,480"
+  if [ $installed_portrait_mode = 1 ]
+  then
+    window_size="480,800"
+  fi
 
   echo "#!/bin/sh" > $xinit_file
-
-  echo 'check_octoprint() {'  >> $xinit_file
-  echo '  pgrep -n octoprint > /dev/null'  >> $xinit_file
-  echo '  return $?'  >> $xinit_file
-  echo '}'  >> $xinit_file
-  echo 'stop_bannerd() {'  >> $xinit_file
-  echo "bpid=\$(sudo ps aux | grep bannerd | awk '{print \$2}' | head -n1)"  >> $xinit_file
-  echo 'if [ ! -z "$bpid" ]'  >> $xinit_file
-  echo 'then'  >> $xinit_file
-  echo 'sudo kill -9 "$bpid"'  >> $xinit_file
-  echo 'fi'  >> $xinit_file
-  echo '}'  >> $xinit_file
-  echo ''  >> $xinit_file
-  echo 'until check_octoprint'  >> $xinit_file
-  echo 'do'  >> $xinit_file
-  echo '  sleep 5'  >> $xinit_file
-  echo 'done'  >> $xinit_file
-  echo ''  >> $xinit_file
-  echo 'sleep 5s'  >> $xinit_file
-  echo 'stop_bannerd' >> $xinit_file
+  echo "" >> $xinit_file
+  echo "sudo pkill -f 'bannerd'"  >> $xinit_file
   echo "" >> $xinit_file
   echo "# disable blank screen" >> $xinit_file
   echo "xset s off" >> $xinit_file
   echo "xset -dpms" >> $xinit_file
   echo "xset s noblank" >> $xinit_file
   echo "" >> $xinit_file
+
+  if [ $installed_portrait_mode = 1 ]
+  then
+  echo "xinput set-prop 'FT5406 memory based driver' 'Coordinate Transformation Matrix' 0 1 0 -1 0 1 0 0 1" >> $xinit_file
+  fi
+
+  echo "" >> $xinit_file
   echo "# launch browser" >> $xinit_file
   echo 'exec chromium-browser \'  >> $xinit_file
-  echo ' --window-size=800,480 \'  >> $xinit_file
-  echo ' --enabled \' >> $xinit_file
-  echo ' --touch-events \' >> $xinit_file
-  echo ' --disable-bundled-ppapi-flash \' >> $xinit_file
-  echo ' --incognito \' >> $xinit_file
+  echo ' --no-first-run \' >> $xinit_file
   echo ' --kiosk \' >> $xinit_file
-  echo ' --window-position=0,0 \' >> $xinit_file
-  echo ' --start-fullscreen \' >> $xinit_file
+  echo ' --touch-events=enabled \' >> $xinit_file
+  echo ' --dns-prefetch-disable \' >> $xinit_file
+  echo ' --disable-sync-preferences \' >> $xinit_file
+  echo ' --disk-cache-size=1048576 \' >> $xinit_file
+  echo ' --disable-java \' >> $xinit_file
+  echo ' --disable-plugins \' >> $xinit_file
+  echo ' --disable-extensions \' >> $xinit_file
+  echo ' --disable-infobars \' >> $xinit_file
   echo ' --start-maximized \' >> $xinit_file
-  echo ' http://127.0.0.1:5000' >> $xinit_file
+  echo ' --window-position=0,0 \' >> $xinit_file
+  echo " --window-size=$window_size \\"  >> $xinit_file
+  echo ' --enabled \' >> $xinit_file
+  echo ' --disable-bundled-ppapi-flash \' >> $xinit_file
+  echo ' --start-fullscreen \' >> $xinit_file
+  echo ' --noerrdialogs \' >> $xinit_file
+  echo ' --user-agent="TouchUI" \' >> $xinit_file
+  echo ' --incognito \' >> $xinit_file
+  echo ' --bwsi \' >> $xinit_file
+  echo ' --allow-insecure-localhost \' >> $xinit_file
+
+  if [ $gl_enabled = 1 ]
+  then
+    echo ' --enable-hardware-overlays="single-fullscreen" \' >> $xinit_file
+    echo ' --enable-accelerated-2d-canvas \' >> $xinit_file
+    echo ' --enable-gpu-rasterization \' >> $xinit_file
+  fi
+
+  echo ' /opt/touchui-autostart/load-screen/startup.html' >> $xinit_file
 
   #maybe useful switches
   # --edge-touch-filtering
@@ -271,14 +379,6 @@ install_touchui() {
   echo 'startx -- -nocursor > /dev/null 2>&1' >> $bashrc_file
   echo 'fi' >> $bashrc_file
   echo '## End TouchUI Settings ##' >> $bashrc_file
-
-  begin_command_group "Installing TouchUI Plugin"
-  add_command /opt/octoprint/venv/bin/pip install "https://github.com/BillyBlaze/OctoPrint-TouchUI/archive/master.zip"
-  run_command_group
-
-  systemctl set-default multi-user.target
-  sed /etc/systemd/system/autologin@.service -i -e 's#^ExecStart=.*#ExecStart=-/sbin/agetty --skip-login --noclear --noissue --login-options "-f pi" %I $TERM#'
-  ln -fs /etc/systemd/system/autologin@.service /etc/systemd/system/getty.target.wants/getty@tty1.service
 
   installed_touchui=1
   logwrite " "
@@ -367,6 +467,12 @@ install_bootsplash() {
   # cleanup spacing
   sed -i 's/\ \ */\ /g' $cmdline_file
 
+  mode="landscape"
+  if [ $installed_portrait_mode = 1 ]
+  then
+    mode="portrait"
+  fi
+
   bannerd_service_file="/etc/systemd/system/splashscreen.service"
   echo "[Unit]"                                                                         > $bannerd_service_file
   echo "Description=Splash screen"                                                      >> $bannerd_service_file
@@ -375,12 +481,15 @@ install_bootsplash() {
   echo ""                                                                               >> $bannerd_service_file
   echo "[Service]"                                                                      >> $bannerd_service_file
   echo 'Type=forking' >> $bannerd_service_file
-  echo "ExecStart=/bin/sh -c '/opt/bannerd/bin/bannerd /opt/bannerd/frames/landscape/*.bmp'"  >> $bannerd_service_file
+  echo "ExecStart=/bin/sh -c '/opt/bannerd/bin/bannerd /opt/bannerd/frames/$mode/*.bmp'"  >> $bannerd_service_file
   echo "StandardInput=tty"                                                              >> $bannerd_service_file
   echo "StandardOutput=tty"                                                             >> $bannerd_service_file
   echo ""                                                                               >> $bannerd_service_file
   echo "[Install]"                                                                      >> $bannerd_service_file
   echo "WantedBy=sysinit.target"                                                        >> $bannerd_service_file
+
+  touch /home/pi/.hushlogin
+  chown pi:pi /home/pi/.hushlogin
 
   begin_command_group "Enabling Bannerd Service"
   add_command systemctl mask plymouth-start.service
@@ -406,7 +515,7 @@ install_samba() {
   logwrite "***** Samba Installed *****"
 }
 
-# Samba Installation
+# Banjour Installation
 install_bonjour() {
   logwrite " "
   logwrite "----- Installing Bonjour -----"
@@ -684,5 +793,16 @@ run_unzip() {
       logwrite "** Done"
     } |$DIALOG "${title_args[@]/#/}" --gauge "Preparing to Extract Zip" 6 78 0
 }
+
+do_reboot() {
+  set_window_title "Reboot"
+  $DIALOG "${title_args[@]/#/}" --yesno "Would you like to reboot now?" 20 60 2
+  if [ $? -eq 0 ]
+  then
+    reboot now
+  fi
+  exit 0
+}
+
 
 init_main
