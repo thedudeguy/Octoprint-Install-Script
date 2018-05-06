@@ -21,6 +21,7 @@ logpath=$(realpath $LOG)
 installed_octoprint=0
 installed_haproxy=0
 installed_touchui=0
+installed_bootsplash=0
 
 logwrite() {
   date=$(date '+%Y-%m-%d %H:%M:%S')
@@ -57,10 +58,11 @@ init_main() {
   set_back_title "Octoprint Setup Utility"
 
   $DIALOG "${title_args[@]/#/}" --checklist --separate-output \
-    'Select features to install'  10 90 3 \
+    'Select features to install'  10 90 4 \
     'OctoPrint' 'The snappy web interface for your 3D printer.' ON \
     'HAProxy'  'Allows both Octoprint and Webcam Stream accessibility on port 80' ON \
     'TouchUI' 'A touch friendly interface for Mobile and TFT touch modules' ON \
+    'BootSplash' 'A cooler animated bootsplash' ON \
     2>results
 
   exitstatus=$?
@@ -76,17 +78,20 @@ init_main() {
         ;;
         TouchUI) install_touchui
         ;;
+        BootSplash) install_bootsplash
+        ;;
       esac
     done < results
     rm -f results
 
     if [ $installed_octoprint = 1 ]
     then
-        start_octoprint
+      start_octoprint
     fi
+
     if [ $installed_haproxy = 1 ]
     then
-        start_haproxy
+      start_haproxy
     fi
   fi
 }
@@ -165,22 +170,6 @@ install_octoprint() {
 
 }
 
-# TouchUI installation
-# Reference: https://github.com/foosel/OctoPrint/wiki/Setup-on-a-Raspberry-Pi-running-Raspbian
-install_touchui() {
-  logwrite " "
-  logwrite "----- Installing TouchUI -----"
-  set_window_title "Installing TouchUI"
-
-  begin_command_group "Installing TouchUI Plugin"
-  add_command /opt/octoprint/venv/bin/pip install "https://github.com/BillyBlaze/OctoPrint-TouchUI/archive/master.zip"
-  run_command_group
-
-  installed_touchui=1
-  logwrite " "
-  logwrite "***** TouchUI Installed *****"
-}
-
 # HAProxy Installation#
 # Reference: https://github.com/foosel/OctoPrint/wiki/Setup-on-a-Raspberry-Pi-running-Raspbian
 install_haproxy() {
@@ -198,6 +187,130 @@ install_haproxy() {
   installed_haproxy=1
   logwrite " "
   logwrite "***** HAProxy Installed *****"
+}
+
+# TouchUI installation
+# Reference: https://github.com/foosel/OctoPrint/wiki/Setup-on-a-Raspberry-Pi-running-Raspbian
+install_touchui() {
+  logwrite " "
+  logwrite "----- Installing TouchUI -----"
+  set_window_title "Installing TouchUI"
+
+  begin_command_group "Installing TouchUI Plugin"
+  add_command /opt/octoprint/venv/bin/pip install "https://github.com/BillyBlaze/OctoPrint-TouchUI/archive/master.zip"
+  run_command_group
+
+  installed_touchui=1
+  logwrite " "
+  logwrite "***** TouchUI Installed *****"
+}
+
+# BootSplash installation
+# References:
+#    https://yingtongli.me/blog/2016/12/21/splash.html
+#    https://scribles.net/silent-boot-up-on-raspbian-stretch/
+install_bootsplash() {
+  logwrite " "
+  logwrite "----- Installing BootSplash -----"
+  set_window_title "Installing BootSplash"
+
+  begin_command_group "Setting up folder structure"
+  add_command mkdir -p /opt/bannerd
+  add_command mkdir -p /opt/bannerd/src
+  add_command mkdir -p /opt/bannerd/bin
+  add_command mkdir -p /opt/bannerd/frames
+  add_command mkdir -p /opt/bannerd/frames/landscape
+  add_command mkdir -p /opt/bannerd/frames/portrait
+  run_command_group
+
+  frames_zip_url_landscape="https://github.com/thedudeguy/Octoprint-Install-Script/raw/master/assets/bootsplash_landscape.zip"
+  frames_path_landscape="/opt/bannerd/frames/landscape"
+  frames_zip_path_landscape="/opt/bannerd/frames/bootsplash_landscape.zip"
+
+  frames_zip_url_portrait="https://github.com/thedudeguy/Octoprint-Install-Script/raw/master/assets/bootsplash_portrait.zip"
+  frames_path_portrait="/opt/bannerd/frames/portrait"
+  frames_zip_path_portrait="/opt/bannerd/frames/bootsplash_portrait.zip"
+
+  run_wget "$frames_zip_url_landscape" "$frames_zip_path_landscape"
+  run_unzip "$frames_zip_path_landscape" "$frames_path_landscape"
+
+  run_wget "$frames_zip_url_portrait" "$frames_zip_path_portrait"
+  run_unzip "$frames_zip_path_portrait" "$frames_path_portrait"
+
+  bannerd_repo="https://github.com/alukichev/bannerd.git"
+  bannerd_src_path="/opt/bannerd/src"
+  run_git_clone "$bannerd_repo" "$bannerd_src_path"
+
+  begin_command_group "Building Bannerd"
+  add_command cd "$bannerd_src_path"
+  add_command make
+  add_command cd /opt/bannerd/bin
+  add_command ln -s ../src/bannerd
+  run_command_group
+
+  config_file="/boot/config.txt"
+  bak_config_file="/boot/config.txt.bak"
+  cmdline_file="/boot/cmdline.txt"
+  bak_cmdline_file="/boot/cmdline.txt.bak"
+
+  if [ ! -f "$bak_config_file" ]
+  then
+    cp "$config_file" "$bak_config_file"
+  fi
+  if [ ! -f "$bak_cmdline_file" ]
+  then
+    cp "$cmdline_file" "$bak_cmdline_file"
+  fi
+  # remove bootsplash block
+  sed -i '/## BootSplash Settings ##/,/## End BootSplash Settings ##/d' $config_file
+  # comment out setting we'll be changing - if they exist in config currently
+  sed -i '/^#/! {/disable_splash/ s/^/#/}' $config_file
+  sed -i '/^#/! {/disable_overscan/ s/^/#/}' $config_file
+  # add setting overrides
+  echo "## BootSplash Settings ##"                  >> $config_file
+  echo "disable_splash=1"                           >> $config_file
+  echo "disable_overscan=1"                         >> $config_file
+  echo "## End BootSplash Settings ##"              >> $config_file
+
+  # remove from commands
+  sed -i 's/logo.nologo//g' $cmdline_file
+  sed -i 's/vt.global_cursor_default=[[:digit:]]//g' $cmdline_file
+  sed -i 's/consoleblank=[[:digit:]]//g' $cmdline_file
+  sed -i 's/loglevel=[[:digit:]]//g' $cmdline_file
+  sed -i 's/quiet//g' $cmdline_file
+  # re-add to commands
+  sed -i 's/$/\ logo.nologo/' $cmdline_file
+  sed -i 's/$/\ vt.global_cursor_default=0/' $cmdline_file
+  sed -i 's/$/\ consoleblank=0/' $cmdline_file
+  sed -i 's/$/\ loglevel=1/' $cmdline_file
+  sed -i 's/$/\ quiet/' $cmdline_file
+  # cleanup spacing
+  sed -i 's/\ \ */\ /g' $cmdline_file
+
+  bannerd_service_file="/etc/systemd/system/splashscreen.service"
+  echo "[Unit]"                                                                         > $bannerd_service_file
+  echo "Description=Splash screen"                                                      >> $bannerd_service_file
+  echo "DefaultDependencies=no"                                                         >> $bannerd_service_file
+  echo "After=local-fs.target"                                                          >> $bannerd_service_file
+  echo ""                                                                               >> $bannerd_service_file
+  echo "[Service]"                                                                      >> $bannerd_service_file
+  echo "ExecStart=/bin/sh -c '/opt/bannerd/bin/bannerd -D /opt/bannerd/frames/landscape/*.bmp'"  >> $bannerd_service_file
+  echo "StandardInput=tty"                                                              >> $bannerd_service_file
+  echo "StandardOutput=tty"                                                             >> $bannerd_service_file
+  echo ""                                                                               >> $bannerd_service_file
+  echo "[Install]"                                                                      >> $bannerd_service_file
+  echo "WantedBy=sysinit.target"                                                        >> $bannerd_service_file
+
+  begin_command_group "Enabling Bannerd Service"
+  add_command systemctl mask plymouth-start.service
+  add_command systemctl disable splashscreen
+  add_command systemctl enable splashscreen
+  add_command systemctl disable getty@tty1
+  run_command_group
+
+  installed_bootsplash=1
+  logwrite " "
+  logwrite "***** BootSplash Installed *****"
 }
 
 start_octoprint() {
@@ -428,6 +541,42 @@ run_wget() {
       logwrite "** Done"
 
     } |$DIALOG "${title_args[@]/#/}" --gauge "Preparing Download" 6 78 0
+}
+
+run_unzip() {
+  zip_file="$1"
+  extract_path="$2"
+
+  logwrite " "
+  logwrite "## Unzipping file"
+
+  total_count=$(unzip -Z $zip_file | tail -n1 | cut -d"," -f1 | tr -d [:alpha:])
+  current_count=0
+  current_status=""
+
+  unzip_cmd="unzip -o $zip_file -d $extract_path"
+  logwrite ">> $unzip_cmd"
+  $unzip_cmd 2>&1 |  \
+    {
+      while read line
+      do
+        logwrite "-- $line"
+
+        current_count=$(($current_count + 1))
+        completion=$(( (100*($current_count-1))/$total_count ))
+        current_status="$line ($current_count/$total_count)"
+
+        echo XXX
+        echo $completion
+        echo "$current_status"
+        echo XXX
+      done
+      echo XXX
+      echo 100
+      echo "Extraction Complete"
+      echo XXX
+      logwrite "** Done"
+    } |$DIALOG "${title_args[@]/#/}" --gauge "Preparing to Extract Zip" 6 78 0
 }
 
 init_main
