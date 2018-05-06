@@ -22,6 +22,8 @@ installed_octoprint=0
 installed_haproxy=0
 installed_touchui=0
 installed_bootsplash=0
+installed_samba=0
+installed_bonjour=0
 
 logwrite() {
   date=$(date '+%Y-%m-%d %H:%M:%S')
@@ -58,11 +60,13 @@ init_main() {
   set_back_title "Octoprint Setup Utility"
 
   $DIALOG "${title_args[@]/#/}" --checklist --separate-output \
-    'Select features to install'  10 90 4 \
+    'Select features to install'  10 90 6 \
     'OctoPrint' 'The snappy web interface for your 3D printer.' ON \
     'HAProxy'  'Allows both Octoprint and Webcam Stream accessibility on port 80' ON \
     'TouchUI' 'A touch friendly interface for Mobile and TFT touch modules' ON \
     'BootSplash' 'A cooler animated bootsplash' ON \
+    'Samba' 'Allows access to octoprint by hostname on windows' ON \
+    'Bonjour' 'Allows access to octoprint by hostname on mac' ON \
     2>results
 
   exitstatus=$?
@@ -79,6 +83,8 @@ init_main() {
         TouchUI) install_touchui
         ;;
         BootSplash) install_bootsplash
+        ;;
+        Samba) install_samba
         ;;
       esac
     done < results
@@ -383,6 +389,32 @@ install_bootsplash() {
   installed_bootsplash=1
   logwrite " "
   logwrite "***** BootSplash Installed *****"
+}
+
+# Samba Installation
+install_samba() {
+  logwrite " "
+  logwrite "----- Installing Samba -----"
+  set_window_title "Installing Samba"
+
+  run_apt_install samba
+
+  installed_samba=1
+  logwrite " "
+  logwrite "***** Samba Installed *****"
+}
+
+# Samba Installation
+install_bonjour() {
+  logwrite " "
+  logwrite "----- Installing Bonjour -----"
+  set_window_title "Installing Bonjour"
+
+  run_apt_install avahi-daemon
+
+  installed_bonjour=1
+  logwrite " "
+  logwrite "***** Bonjour Installed *****"
 }
 
 start_octoprint() {
